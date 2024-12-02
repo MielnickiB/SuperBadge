@@ -1,47 +1,106 @@
 @isTest
 public class MaintenanceRequestHelperTest {
-    @isTest
-    static void testUpdateWorkOrders() {
-        // Create a Case of type 'Repair' with status 'New'
-        Case repairCase = new Case(
-            Type = 'Repair',
-            Status = 'New',
-            Subject = 'Test Repair Case'
-        );
-        insert repairCase;
+    @testSetup
+    static void setup() {
+        List<Vehicle__c> vehicles = new List<Vehicle__c>();
+        for (Integer i = 0; i < 10; i++) {
+            Vehicle__c vehicle = new Vehicle__c();
+            vehicle.Name = 'Test Vehicle ' + i;
+            vehicles.add(vehicle);
+        }
+        insert vehicles;
 
-        // Update the Case to 'Closed'
-        repairCase.Status = 'Closed';
-        update repairCase;
+        List<Product2> equipments = new List<Product2>();
+        for (Integer i = 0; i < 10; i++) {
+            Product2 equipment = new Product2();
+            equipment.Name = 'Test Equipment ' + i;
+            equipment.Maintenance_Cycle__c = 30;
+            equipment.Replacement_Part__c = true;
+            equipments.add(equipment);
+        }
+        insert equipments;
 
-        // Query for the new Routine Maintenance Case
-        List<Case> routineCases = [SELECT Id, Type, Status, ParentId FROM Case WHERE ParentId = :repairCase.Id];
+        List<Case> cases = new List<Case>();
+        for (Integer i = 0; i < 10; i++) {
+            Case c = new Case();
+            c.Status = 'New';
+            c.Type = 'Repair';
+            c.Subject = 'Test Case ' + i;
+            c.Vehicle__c = vehicles[i].Id;
+            cases.add(c);
+        }
+        insert cases;
 
-        // Verify that a new Routine Maintenance Case was created
-        System.assertEquals(1, routineCases.size());
-        System.assertEquals('Routine Maintenance', routineCases[0].Type);
-        System.assertEquals('New', routineCases[0].Status);
-        System.assertEquals(repairCase.Id, routineCases[0].ParentId);
+        List<Equipment_Maintenance_Item__c> items = new List<Equipment_Maintenance_Item__c>();
+        for (Integer i = 0; i < 10; i++) {
+            Equipment_Maintenance_Item__c item = new Equipment_Maintenance_Item__c();
+            item.Maintenance_Request__c = cases[i].Id;
+            item.Equipment__c = equipments[i].Id;
+            items.add(item);
+        }
+        insert items;
     }
 
     @isTest
-    static void testNoRoutineMaintenanceForNonClosedStatus() {
-        // Create a Case of type 'Repair' with status 'New'
-        Case repairCase = new Case(
-            Type = 'Repair',
-            Status = 'New',
-            Subject = 'Test Repair Case'
-        );
-        insert repairCase;
+    static void testPositiveCase() {
+        // Pobranie przypadków testowych
+        List<Case> cases = [SELECT Id, Status, Type, Vehicle__c FROM Case WHERE Status = 'New'];
+        
+        Map<Id, Case> oldCaseMap = new Map<Id, Case>();
+        for (Case c : cases) {
+            oldCaseMap.put(c.Id, c.clone(false, true, true, true));
+        }
 
-        // Update the Case to 'Working'
-        repairCase.Status = 'Working';
-        update repairCase;
+        for (Case c : cases) {
+            c.Status = 'Closed';
+        }
 
-        // Query for the new Routine Maintenance Case
-        List<Case> routineCases = [SELECT Id, Type, Status, ParentId FROM Case WHERE ParentId = :repairCase.Id];
+        Test.startTest();
+        update cases;
+        Test.stopTest();
 
-        // Verify that no new Routine Maintenance Case was created
-        System.assertEquals(0, routineCases.size());
+        List<Case> newRoutineRequests = [SELECT Id, Status, Type, Subject, Vehicle__c FROM Case WHERE Type = 'Routine Maintenance'];
+        System.assertEquals(10, newRoutineRequests.size(), 'Should have created 10 routine maintenance requests');
+    }
+
+    @isTest
+    static void testNegativeCase() {
+        List<Case> cases = [SELECT Id, Status, Type, Vehicle__c FROM Case WHERE Status = 'New'];
+        Map<Id, Case> oldCaseMap = new Map<Id, Case>();
+        for (Case c : cases) {
+            oldCaseMap.put(c.Id, c.clone(false, true, true, true));
+        }
+
+        for (Case c : cases) {
+            c.Status = 'In Progress';
+        }
+
+        Test.startTest();
+        update cases;
+        Test.stopTest();
+
+        List<Case> newRoutineRequests = [SELECT Id, Status, Type, Subject, Vehicle__c FROM Case WHERE Type = 'Routine Maintenance'];
+        System.assertEquals(0, newRoutineRequests.size(), 'Should not have created any routine maintenance requests');
+    }
+
+    @isTest
+    static void testPositiveButBadType() {
+        List<Case> cases = [SELECT Id, Status, Type, Vehicle__c FROM Case WHERE Status = 'New'];
+        Map<Id, Case> oldCaseMap = new Map<Id, Case>();
+        for (Case c : cases) {
+            oldCaseMap.put(c.Id, c.clone(false, true, true, true));
+        }
+
+        for (Case c : cases) {
+            c.Status = 'Closed';
+            c.Type = 'Inquiry';
+        }
+
+        Test.startTest();
+        update cases;
+        Test.stopTest();
+
+        List<Case> newRoutineRequests = [SELECT Id, Status, Type, Subject, Vehicle__c FROM Case WHERE Type = 'Routine Maintenance'];
+        System.assertEquals(0, newRoutineRequests.size(), 'Should not have created any routine maintenance requests');
     }
 }
